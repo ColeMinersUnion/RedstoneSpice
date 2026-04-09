@@ -4,7 +4,7 @@ A spice style simulator for nodal analysis of redstone circuits.
 
 ## Organization
 
-- A YAML Parser
+- A JSON Parser
 - Builder Class
 - library of components
 - a main file
@@ -15,6 +15,10 @@ Library should include solid block, transparent block, redstone dust, comparator
 
 Scheduler,
 Every event happens at a given redstone tick
+
+## Sources
+https://minecraft.wiki/w/Block_states
+
 
 ## Next Features
 All of them
@@ -29,3 +33,4 @@ Try to set up solid github page
 
 ## Limitations
 Zero-tick circuits
+Entities
