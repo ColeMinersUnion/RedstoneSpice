@@ -89,7 +89,7 @@ class RedstoneTorch(source):
                 if d == translateDirection(self.facing):
                     outputs[d + self.position] = ("strong", 15)
                 elif d != self.block:
-                    outputs[d + self.position] = ("weak", 15)
+                    outputs[d + self.position] = ("indirect", 15)
             return outputs
         return
     
@@ -126,7 +126,7 @@ class Button(source):
             if d == self.block:
                 outputs[d + self.position] = ("strong", 15)
             else:
-                outputs[d + self.position] = ("weak", 15)
+                outputs[d + self.position] = ("indirect", 15)
         return outputs
 
 class Lever(source):
@@ -150,7 +150,7 @@ class Lever(source):
             if d == self.block:
                 outputs[d + self.position] = ("strong", 15)
             else:
-                outputs[d + self.position] = ("weak", 15)
+                outputs[d + self.position] = ("indirect", 15)
         self.prev_state = self.state
         return outputs
 
@@ -163,4 +163,4 @@ class RedstoneBlock(source):
             return
         outputs = {}
         for d in directions:
-            outputs[d + self.position] = ("weak", 15)        
+            outputs[d + self.position] = ("indirect", 15)        

@@ -19,7 +19,6 @@ Every event happens at a given redstone tick
 ## Sources
 https://minecraft.wiki/w/Block_states
 
-
 ## Next Features
 All of them
 
@@ -27,7 +26,7 @@ All of them
 new rendering engine (three.js), QC circuitry & storage blocks. 
 
 ## To-Do:
-Everything
+Initial Mechanism Library
 Clean Up documentation
 Try to set up solid github page
 

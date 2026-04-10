@@ -44,6 +44,12 @@ class Block(Component):
         super().__init__(position)
         self.powered = kwargs.get("powered", False)
         self.block_state = kwargs
+        """
+        conductive blocks can be
+        strong powered, (can power redstone dust)
+        weakly powered, (only indirect power)
+        indirect power, (does not spread, activates mechanism)
+        """
 
     # To be called each tick
     def update(self, input: dict):
@@ -90,4 +96,16 @@ def translateDirection(direction: str):
         case "down":
             return array((0, -1, 0))
     raise ValueError("Invalid Direction")
+
+def rotateOffset90(direction: ndarray)->ndarray:
+    match direction.tolist():
+        case [1, 0, 0]:
+            return array((0, 0, 1))
+        case [-1, 0, 0]:
+            return array((0, 0, -1))
+        case [0, 0, 1]:
+            return array((-1, 0, 0))
+        case [0, 0, -1]:
+            return array((1, 0, 0))
+    raise ValueError("Improper Direction")
         
