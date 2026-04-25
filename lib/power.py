@@ -1,4 +1,4 @@
-from base import Component, translateDirection
+from base import Component, translateDirection, SignalType, SignalDict
 from numpy import ndarray, array
 from collections import deque
 
@@ -66,7 +66,7 @@ class RedstoneTorch(source):
     """
     Should handle burnout
     """
-    def update(self, inputs: dict)->dict | None:
+    def update(self, inputs: SignalDict)->SignalDict | None:
         prev_state = self.state
         if self.history.burnout():
             self.state = False
@@ -84,12 +84,12 @@ class RedstoneTorch(source):
         
         #If the updates changed the torch
         if(prev_state != self.state):
-            outputs = {}
+            outputs = SignalDict()
             for d in directions:
                 if d == translateDirection(self.facing):
-                    outputs[d + self.position] = ("strong", 15)
+                    outputs[d] = (SignalType(2), 15)
                 elif d != self.block:
-                    outputs[d + self.position] = ("indirect", 15)
+                    outputs[d] = (SignalType(4), 15)
             return outputs
         return
     
@@ -113,7 +113,7 @@ class Button(source):
         self.state = True
         self.duration = self.sustain
 
-    def update(self) -> dict | None:
+    def update(self) -> SignalDict | None:
         #Strongly powers the block it's on, weakly powers adjacent spots. 
         if not self.state:
             return
@@ -121,12 +121,12 @@ class Button(source):
             self.state = False
         
         self.duration = max(0, self.duration-1)
-        outputs = {}
+        outputs = SignalDict()
         for d in directions:
             if d == self.block:
-                outputs[d + self.position] = ("strong", 15)
+                outputs[d] = (SignalType(2), 15)
             else:
-                outputs[d + self.position] = ("indirect", 15)
+                outputs[d] = (SignalType(5), 15)
         return outputs
 
 class Lever(source):
@@ -141,16 +141,16 @@ class Lever(source):
     def toggle(self) -> None:
         self.state = not self.state
 
-    def update(self)->dict | None:
+    def update(self)->SignalDict | None:
         #Strongly powers the block it's on, weakly powers adjacent spots. 
         if self.state == self.prev_state:
             return
-        outputs = {}
+        outputs = SignalDict()
         for d in directions:
             if d == self.block:
-                outputs[d + self.position] = ("strong", 15)
+                outputs[d] = (SignalType(2), 15)
             else:
-                outputs[d + self.position] = ("indirect", 15)
+                outputs[d] = (SignalType(5), 15)
         self.prev_state = self.state
         return outputs
 
@@ -158,9 +158,9 @@ class RedstoneBlock(source):
     def __init__(self, position: ndarray, **kwargs):
         super().__init__(position)
 
-    def update(self, initial_tick: bool = False) -> dict | None:
+    def update(self, initial_tick: bool = False) -> SignalDict | None:
         if not initial_tick:
             return
-        outputs = {}
+        outputs = SignalDict()
         for d in directions:
-            outputs[d + self.position] = ("indirect", 15)        
+            outputs[d] = (SignalType(5), 15)        
