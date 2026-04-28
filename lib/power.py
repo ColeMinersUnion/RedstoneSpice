@@ -1,4 +1,4 @@
-from base import Component, translateDirection, SignalType, SignalDict
+from lib.base import Component, translateDirection, SignalType, SignalDict
 from numpy import ndarray, array
 from collections import deque
 

@@ -1,4 +1,4 @@
-from base import Component, translateDirection, rotateOffset90, SignalType, SignalDict
+from lib.base import Component, translateDirection, rotateOffset90, SignalType, SignalDict
 from numpy import ndarray, array
 
 #* yay! The annoying parts now
@@ -42,7 +42,7 @@ class RedstoneDust(Component):
         return f'Redstone Dust at {self.position} with signal strength {self.strength}'
     
 
-class RedstoneRepeater(Component):
+class Repeater(Component):
     def __init__(self, position: ndarray, facing: str, **kwargs):
         super().__init__(position)
         self.facing = facing
@@ -133,17 +133,20 @@ class Comparator(Component):
         outputs = SignalDict()
         self_ = array((0,0,0))
 
+        #read blocks here?
+        rear = inputs[main_input_dir][1]
+
         if self_ in inputs:
-            outputs[output_dir] = (SignalType(1), inputs[self_][1])
+            outputs[output_dir] = (SignalType(1), rear)
 
         if(right not in inputs and left not in inputs and main_input_dir in inputs):
             #Maintain!
-            outputs[self_] = (SignalType(1), inputs[main_input_dir][1])
+            outputs[self_] = (SignalType(1), rear)
             return outputs
 
         left_input = inputs[left][1]
         right_input = inputs[right][1]
-        rear = inputs[main_input_dir][1]
+        
         def _compare()->int:
             return rear if max(right_input, left_input) < rear else 0
             
