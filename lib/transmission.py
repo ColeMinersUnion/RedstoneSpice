@@ -3,57 +3,84 @@ from numpy import ndarray, array
 
 #* yay! The annoying parts now
 
-#Redstone Dust
+# ---------------------------------------------------------------------------
+# Helper: compare two numpy direction arrays for equality.
+# Plain `==` returns an element-wise array, which breaks `in` / `if` tests.
+# ---------------------------------------------------------------------------
+def _dir_eq(a: ndarray, b: ndarray) -> bool:
+    return bool((a == b).all())
+
+def _dir_in(needle: ndarray, haystack: list[ndarray]) -> bool:
+    return any(_dir_eq(needle, h) for h in haystack)
+
+
+# ---------------------------------------------------------------------------
+# Redstone Dust
+# ---------------------------------------------------------------------------
 class RedstoneDust(Component):
     def __init__(self, position: ndarray, facing: tuple):
         super().__init__(position)
         self.strength = 0
-        #need to cache the signal strength from all input directions.
+        # Cache the signal strength from all valid input directions.
         self.inputs = SignalDict()
         self.state = False
         
         self.directions = [translateDirection(dir) for dir in facing]
-        self.directions.append(array((0, -1, 0))) 
-        #redstone always faces down and up
+        self.directions.append(array((0, -1, 0)))
+        # Redstone dust always connects downward (and upward via slope,
+        # but down is the minimum we always include).
 
-
-    def update(self, inputs: SignalDict)->SignalDict | None:
-        
+    def update(self, inputs: SignalDict) -> SignalDict | None:
         """
-        ignore power from inputs that we aren't facing
+        Accept signals only from directions the dust is facing.
+        Propagate a WEAK signal at (received_strength - 1) onward.
+        Only emits an output when strength actually changes, so unpowered
+        dust doesn't flood the circuit with zero-strength noise.
         """
+        # Update the cached inputs for directions we are facing.
         for block in inputs:
-            if block in self.directions:
+            if _dir_in(block, self.directions):
                 self.inputs[block] = inputs[block]
-                #updating self.inputs cache
-        
-        #TODO: Find a better way of encoding the redstone dust propogation.
-        # I Think I did?
-        self.strength = max([val for type_, val in self.inputs if type_ <= SignalType(3)])
-        
-        #redstone weakly powers blocks that it faces
+
+        # Compute new strength from cached inputs.
+        # Accept any signal type except no_power — the WEAK(3)/weak(4) distinction
+        # matters for dust-to-dust vs source-to-dust propagation semantics, but
+        # both carry a real strength that should contribute to this dust's level.
+        strengths = [val for _type, val in self.inputs.values()
+                     if _type != SignalType.no_power]
+        new_strength = max(strengths) if strengths else 0
+
+        # No change — nothing to propagate.
+        if new_strength == self.strength:
+            return None
+
+        self.strength = new_strength
+        self.state = self.strength > 0
+
+        out_strength = max(0, self.strength - 1)
+
         outputs = SignalDict()
-        for dir in self.directions:
-            outputs[dir] = (SignalType(3), self.strength-1)
-        #WEAK -> is only from redstone dust. Dust needs to power more dust
-        #still needs to be interpretted as weak for the mechanisms
+        for d in self.directions:
+            outputs[d] = (SignalType.WEAK, out_strength)
+        return outputs
 
     def __repr__(self):
         return f'Redstone Dust at {self.position} with signal strength {self.strength}'
     
 
+# ---------------------------------------------------------------------------
+# Repeater
+# ---------------------------------------------------------------------------
 class Repeater(Component):
-    def __init__(self, position: ndarray, facing: str, **kwargs):
+    def __init__(self, position: ndarray, facing: str, delay: int = 1, **kwargs):
         super().__init__(position)
         self.facing = facing
         self.output = False
-        self.delay = 1
+        self.delay = max(1, delay)
         self.locked = False
         self.count = 0
 
-    def update(self, inputs: SignalDict)->SignalDict | None:
-        #Redstone Repeaters and Comparators will output STRONG signals
-        #This is for locking repeaters, and both happen to only have strong outputs
+    def update(self, inputs: SignalDict) -> SignalDict | None:
         output_dir = translateDirection(self.facing)
         input_dir = -1 * output_dir
 
@@ -61,103 +88,116 @@ class Repeater(Component):
 
         outputs = SignalDict()
 
-        if(inputs[rotateOffset90(output_dir)+self.position][0] == SignalType(1)
-           or inputs[rotateOffset90(input_dir) + self.position][0] == SignalType(1)):
-            #lock the repeater
+        # BUG 5 FIX: use relative offsets only — do NOT add self.position.
+        # rotateOffset90 gives the 90° lateral direction; that offset is
+        # exactly the key the Circuit puts in our inputs SignalDict.
+        left_dir  = rotateOffset90(output_dir)
+        right_dir = rotateOffset90(input_dir)
+
+        left_signal  = inputs.get(left_dir)
+        right_signal = inputs.get(right_dir)
+
+        # A repeater is locked when either lateral neighbour sends STRONG (1).
+        if ((left_signal  is not None and left_signal[0]  == SignalType.STRONG) or
+            (right_signal is not None and right_signal[0] == SignalType.STRONG)):
             self.locked = True
         elif self.locked:
             self.locked = False
-        
+
         if self.locked:
-            outputs[output_dir] = (SignalType(1), 15)
-            return outputs
-        
-        self_ = array((0,0,0))
-
-        #TODID: Fixed?
-        """
-        if Input SignalType, start count = 1
-        Send update to self
-
-        if inputs.get(self), increase count
-            if count < self.delay, increase count, update self
-            elif count < 2 * self.delay, increase count, update self & output_dir
-            else (no updates, it should stay on)
-        elif inputs.get(self) and not input_signal[0]
-            turn off
-        """
-        if input_signal and input_signal[0]:
-            self.count = 1
-            outputs[self_] = (SignalType(0), 0)
-            return outputs
-        if self.count < self.delay:
-            self.count += 1
-            outputs[self_] = (SignalType(0), 0)
-            return outputs
-        elif self.count < 2 * self.delay:
-            self.count += 1
-            self.output = True
-            outputs[self_] = (SignalType(0), 0)
-            outputs[output_dir] = (SignalType(1), 15)
-            return outputs
-        elif input_signal and not input_signal[0]:
-            self.count = 0 #reset
+            # Hold current output while locked; re-emit so downstream stays updated.
             if self.output:
-                outputs[output_dir] = (SignalType(0), 15) #I no longer need to update itself
-                self.output = False
+                outputs[output_dir] = (SignalType.STRONG, 15)
+            return outputs if outputs else None
+
+        self_ = array((0, 0, 0))
+
+        # Rising edge — a new powered input arrived.
+        if input_signal and input_signal[1] > 0 and self.count == 0:
+            self.count = 1
+            outputs[self_] = (SignalType.no_power, 0)   # schedule self-update
             return outputs
-        
-        #No updates needed
-        return
+
+        # Counting up through the delay.
+        if 0 < self.count < self.delay:
+            self.count += 1
+            outputs[self_] = (SignalType.no_power, 0)
+            return outputs
+
+        # Delay elapsed — turn output on and keep re-scheduling until input drops.
+        if self.count >= self.delay:
+            if input_signal and input_signal[1] > 0:
+                self.count += 1
+                self.output = True
+                outputs[self_] = (SignalType.no_power, 0)
+                outputs[output_dir] = (SignalType.STRONG, 15)
+                return outputs
+            else:
+                self.count = 0
+                if self.output:
+                    self.output = False
+                    outputs[output_dir] = (SignalType.no_power, 0)
+                return outputs if outputs else None
+
+        # No update needed.
+        return None
 
     def __repr__(self):
-        return f'A{" locked " if self.locked else " "}Redstone Repeater with state {"on" if self.output else "off"}'
-    
+        return (f'A{" locked " if self.locked else " "}Redstone Repeater '
+                f'with state {"on" if self.output else "off"}')
 
-"""
-Comparator
-"""       
+
+# ---------------------------------------------------------------------------
+# Comparator
+# ---------------------------------------------------------------------------
 class Comparator(Component):
-    def __init__(self, position: ndarray, facing: str, mode = "compare", **kwargs):
+    def __init__(self, position: ndarray, facing: str, mode: str = "compare", **kwargs):
         super().__init__(position)
         self.facing = facing
-        self.mode = True if mode == "subtract" else False
-        self.count = 0
+        self.mode = (mode == "subtract")   # True → subtract, False → compare
+        self.output_strength = 0
 
-    def update(self, inputs: SignalDict)->SignalDict | None:
-        output_dir = translateDirection(self.facing)
-        main_input_dir = -1 * output_dir
-        right = rotateOffset90(main_input_dir)
-        left = rotateOffset90(output_dir)
+    def update(self, inputs: SignalDict) -> SignalDict | None:
+        output_dir      = translateDirection(self.facing)
+        main_input_dir  = -1 * output_dir
+        right           = rotateOffset90(main_input_dir)
+        left            = rotateOffset90(output_dir)
 
         outputs = SignalDict()
-        self_ = array((0,0,0))
+        self_   = array((0, 0, 0))
 
-        #read blocks here?
-        rear = inputs[main_input_dir][1]
+        # If no rear input, there is nothing to propagate.
+        rear_signal = inputs.get(main_input_dir)
+        if rear_signal is None:
+            return None
+        rear = rear_signal[1]
 
+        # Self-addressed tick — the delayed output is now ready to fire.
         if self_ in inputs:
-            outputs[output_dir] = (SignalType(1), rear)
+            if self.output_strength > 0:
+                outputs[output_dir] = (SignalType.STRONG, self.output_strength)
+            return outputs if outputs else None
 
-        if(right not in inputs and left not in inputs and main_input_dir in inputs):
-            #Maintain!
-            outputs[self_] = (SignalType(1), rear)
-            return outputs
+        # No side inputs → maintain (pass-through) mode.
+        if right not in inputs and left not in inputs:
+            if rear > 0:
+                self.output_strength = rear
+                outputs[self_] = (SignalType.STRONG, rear)   # delay via self
+            return outputs if outputs else None
 
-        left_input = inputs[left][1]
-        right_input = inputs[right][1]
-        
-        def _compare()->int:
-            return rear if max(right_input, left_input) < rear else 0
-            
-        def _subtract()->int:
-            return max(rear-max(right_input, left_input), 0)
-        
-        
-        if self.mode and _subtract():
-            outputs[self_] =(SignalType(1), _subtract())
-        elif _compare():
-            outputs[self_] =(SignalType(1), _compare())
-        else:
-            return
-       
+        left_val  = inputs[left][1]  if left  in inputs else 0
+        right_val = inputs[right][1] if right in inputs else 0
+        side_max  = max(left_val, right_val)
+
+        def _compare() -> int:
+            return rear if side_max < rear else 0
+
+        def _subtract() -> int:
+            return max(rear - side_max, 0)
+
+        result = _subtract() if self.mode else _compare()
+        self.output_strength = result
+
+        if result > 0:
+            outputs[self_] = (SignalType.STRONG, result)   # delay via self
+        return outputs if outputs else None

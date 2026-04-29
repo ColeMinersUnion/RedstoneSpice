@@ -2,12 +2,7 @@ from lib.base import Component, translateDirection, SignalType, SignalDict
 from numpy import ndarray, array
 from collections import deque
 
-#TODO: Better type hints (on iterables)
 
-"""
-For submission:
-Lever, Button, RTorch, RBlock?
-"""
 class source(Component):
     def __init__(self, position: ndarray):
         super().__init__(position)
@@ -22,6 +17,11 @@ directions  =  [array((1, 0, 0)), array((-1, 0, 0)),
 #I'm wrapping redstone torch and redstone wall torch together
 class RedstoneTorch(source):
     def __init__(self, position: ndarray, facing: str = "up", **kwargs):
+        """
+        The facing direction is the direction it is facing
+        Since this state is only tracked on walls, 
+        if there is no state, the torch is on the ground 
+        """
         super().__init__(position)
         self.facing = facing
         self.state = kwargs.get("lit", True)
@@ -31,17 +31,14 @@ class RedstoneTorch(source):
         self.block = -1 * translateDirection(self.facing)
         self.history = self._cached_history(self.state, 30)
 
-        """
-        The facing direction is the direction it is facing
-        Since this state is only tracked on walls, 
-        if there is no state, the torch is on the ground 
-        """
+        
 
-    """
-    The torch burns out if there are 8 state changes in 30 redstone ticks
-    It doesn't turn back on until there are less than 8 state changes in 30 ticks
-    """
+    
     class _cached_history:
+        """
+        The torch burns out if there are 8 state changes in 30 redstone ticks
+        It doesn't turn back on until there are less than 8 state changes in 30 ticks
+        """
         def __init__(self, initial_state: bool, length):
             self.length = length
             self.history = deque([initial_state] * self.length, maxlen=self.length)
@@ -66,32 +63,25 @@ class RedstoneTorch(source):
     """
     Should handle burnout
     """
-    def update(self, inputs: SignalDict)->SignalDict | None:
+    def update(self, inputs: SignalDict) -> SignalDict | None:
         prev_state = self.state
+
         if self.history.burnout():
             self.state = False
         elif self.block in inputs:
-            #TODO: Figure out how inputs are sent
-            if inputs[self.block]:
-                self.state = False
-            else:
-                self.state = True
+            self.state = inputs[self.block][1] == 0
 
-        #update history
-        #burnout. 
         self.history.append(self.state)
 
-        
-        #If the updates changed the torch
-        if(prev_state != self.state):
+        if prev_state != self.state:
             outputs = SignalDict()
             for d in directions:
-                if d == translateDirection(self.facing):
-                    outputs[d] = (SignalType(2), 15)
-                elif d != self.block:
-                    outputs[d] = (SignalType(4), 15)
+                if (d == translateDirection(self.facing)).all():
+                    outputs[d] = (SignalType.strong, 15)
+                elif not (d == self.block).all():
+                    outputs[d] = (SignalType.weak, 15)
             return outputs
-        return
+        return None
     
 
 class Button(source):
@@ -100,11 +90,6 @@ class Button(source):
         self.facing = facing
         self.block = -1 * translateDirection(self.facing)
 
-        """
-        Stone buttons hold for 20 game ticks
-        Wood buttons hold for 30 game ticks. 
-        2 game ticks = 1 redstone tick (with a rising and falling edge)
-        """
         self.sustain = 10 if material == "stone" else 15
         self.state = False
         self.duration = 0
@@ -113,54 +98,58 @@ class Button(source):
         self.state = True
         self.duration = self.sustain
 
-    def update(self) -> SignalDict | None:
-        #Strongly powers the block it's on, weakly powers adjacent spots. 
+    def update(self, inputs: SignalDict | None = None) -> SignalDict | None:
         if not self.state:
-            return
-        if self.state and not self.duration:
+            return None
+
+
+        self.duration = max(0, self.duration - 1)
+        if self.duration == 0:
             self.state = False
-        
-        self.duration = max(0, self.duration-1)
+            # Emit a zero-strength update so downstream knows power dropped.
+            off_outputs = SignalDict()
+            for d in directions:
+                off_outputs[d] = (SignalType.no_power, 0)
+            return off_outputs
+
         outputs = SignalDict()
         for d in directions:
-            if d == self.block:
-                outputs[d] = (SignalType(2), 15)
+            if (d == self.block).all():
+                outputs[d] = (SignalType.strong, 15)
             else:
-                outputs[d] = (SignalType(5), 15)
+                outputs[d] = (SignalType.weak, 15)
         return outputs
 
 class Lever(source):
     def __init__(self, position: ndarray, facing: str, **kwargs):
-        super().__init__(position)        
+        super().__init__(position)
         self.facing = facing
         self.block = -1 * translateDirection(self.facing)
-
         self.state = False
         self.prev_state = False
 
     def toggle(self) -> None:
         self.state = not self.state
 
-    def update(self)->SignalDict | None:
-        #Strongly powers the block it's on, weakly powers adjacent spots. 
+    def update(self, inputs: SignalDict | None = None) -> SignalDict | None:
         if self.state == self.prev_state:
-            return
+            return None
+        self.prev_state = self.state
         outputs = SignalDict()
         for d in directions:
-            if d == self.block:
-                outputs[d] = (SignalType(2), 15)
+            if (d == self.block).all():
+                outputs[d] = (SignalType.strong, 15) if self.state else (SignalType.no_power, 0)
             else:
-                outputs[d] = (SignalType(5), 15)
-        self.prev_state = self.state
+                outputs[d] = (SignalType.weak, 15) if self.state else (SignalType.no_power, 0)
         return outputs
 
 class RedstoneBlock(source):
     def __init__(self, position: ndarray, **kwargs):
         super().__init__(position)
+        self.state = True   # always on
 
-    def update(self, initial_tick: bool = False) -> SignalDict | None:
-        if not initial_tick:
-            return
+    def update(self, inputs: SignalDict | None = None) -> SignalDict | None:
         outputs = SignalDict()
         for d in directions:
-            outputs[d] = (SignalType(5), 15)        
+            outputs[d] = (SignalType.weak, 15)
+        return outputs

@@ -18,20 +18,13 @@ class ReadableComponent(Component):
         return 0
 
 
-# ---------------------------------------------------------------------------
-# RedstoneLamp — purely reflects the incoming signal.
-# On  while any powering signal is present; off the moment all signals drop.
-# Emits indirect power to all adjacent solid blocks when lit.
-# ---------------------------------------------------------------------------
 class RedstoneLamp(Component):
     """
     Turns on whenever any adjacent block delivers a powering signal
     (STRONG / strong / WEAK / weak / indirect).  The lamp itself is
-    transparent to redstone, so it never propagates signal further — it
+    transparent to redstone, so it never propagates signal further - it
     only emits SignalType.indirect outward so that adjacent solid blocks
     know they're next to a lit lamp (required for correct Block update logic).
-
-    Wiki: https://minecraft.wiki/w/Redstone_Lamp
     """
 
     def __init__(self, position: ndarray, **kwargs):
@@ -66,15 +59,8 @@ class RedstoneLamp(Component):
         return f"RedstoneLamp({'lit' if self.lit else 'unlit'}) at {self.position}"
 
 
-# ---------------------------------------------------------------------------
-# NoteBlock — impulse response.
-# Plays exactly once on the rising edge of the input signal.
-# Never powers adjacent blocks (purely an output device in this sim).
-# ---------------------------------------------------------------------------
 class NoteBlock(Component):
-    """
-    Wiki: https://minecraft.wiki/w/Note_Block
-    """
+
 
     def __init__(self, position: ndarray, **kwargs):
         super().__init__(position)
@@ -115,20 +101,14 @@ class NoteBlock(Component):
         return f"NoteBlock({'powered' if self.powered else 'idle'}) at {self.position}"
 
 
-# ---------------------------------------------------------------------------
-# CopperBulb — latching memory element.
-# Toggles its stored state on each rising edge; ignores sustained signals.
-# Always emits indirect power to adjacent solid blocks based on current state.
-# ---------------------------------------------------------------------------
+
 class CopperBulb(ReadableComponent):
     """
-    State toggles on every rising edge (low→high transition) of the input
+    State toggles on every rising edge (low->high transition) of the input
     signal.  The bulb *retains* its state when the signal drops — this is
     the key property that makes it useful for memory circuits.
 
     The comparator output is 15 when lit, 0 when dark.
-
-    Wiki: https://minecraft.wiki/w/Copper_Bulb
     """
 
     def __init__(self, position: ndarray, **kwargs):
